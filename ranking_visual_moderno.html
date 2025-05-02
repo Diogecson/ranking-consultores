@@ -1,0 +1,242 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Ranking com Estilo Animado</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: white;
+      overflow-x: hidden;
+      background: linear-gradient(270deg, #1b1f3a, #00498E, #1b1f3a);
+      background-size: 600% 600%;
+      animation: gradientBackground 15s ease infinite;
+    }
+
+    @keyframes gradientBackground {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      background-color: rgba(0,0,0,0.3);
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 1.8em;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 14px;
+      background-color: #FAA612;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #1b1f3a;
+      font-weight: bold;
+    }
+
+    table {
+      width: 95%;
+      margin: 20px auto;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      text-align: center;
+      color: white;
+    }
+
+    th {
+      background-color: rgba(0, 73, 142, 0.8);
+      color: #fff;
+    }
+
+    td.nome {
+      color: #FAA612;
+      cursor: pointer;
+      font-weight: bold;
+      text-decoration: underline;
+    }
+
+    .gold {
+      background-color: rgba(255, 215, 0, 0.3);
+    }
+
+    #graficoMatriculas {
+      max-width: 1000px;
+      margin: 0 auto 40px;
+    }
+
+    #analise {
+      display: none;
+      background-color: rgba(0,0,0,0.4);
+      margin: 0 auto;
+      padding: 20px;
+      width: 80%;
+      border-radius: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>Ranking de Consultores</h2>
+    <button onclick="toggleFullscreen()">🔳 Tela Cheia</button>
+  </header>
+
+  <table id="ranking">
+    <thead>
+      <tr>
+        <th>Classificação</th>
+        <th>Consultores</th>
+        <th>Matriculas Presencial</th>
+        <th>Matriculas Ead</th>
+        <th>Matriculas Semi-Presencial</th>
+        <th>Total de Matriculas</th>
+        <th>TOTAL GERAL</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <canvas id="graficoMatriculas" height="160"></canvas>
+
+  <div id="analise">
+    <h3 id="analiseTitulo">Análise Individual</h3>
+    <p><strong>Presencial:</strong> <span id="presencial"></span> - <span id="presencialPct"></span>%</p>
+    <p><strong>EAD:</strong> <span id="ead"></span> - <span id="eadPct"></span>%</p>
+    <p><strong>Semi:</strong> <span id="semi"></span> - <span id="semiPct"></span>%</p>
+    <p><strong>Total:</strong> <span id="total"></span></p>
+    <button onclick="voltar()">Voltar</button>
+  </div>
+
+  <script>
+    const dadosURL = "https://opensheet.elk.sh/12fP3mNTB1WwRE4Y41Xjpx9TzdfhXaVrZ5B-XsO9jgEc/base";
+    const metasURL = "https://opensheet.elk.sh/12fP3mNTB1WwRE4Y41Xjpx9TzdfhXaVrZ5B-XsO9jgEc/metas";
+
+    let chart, dadosOriginais = [], metas = {
+      presencial: 4,
+      ead: 9,
+      semi: 4
+    };
+
+    async function carregarMetas() {
+      const res = await fetch(metasURL);
+      const data = await res.json();
+      metas = {
+        presencial: parseInt(data.find(m => m.modalidade === "Matriculas Presencial")?.valor) || 1,
+        ead: parseInt(data.find(m => m.modalidade === "Matriculas Ead")?.valor) || 1,
+        semi: parseInt(data.find(m => m.modalidade === "Matriculas Semi")?.valor) || 1
+      };
+    }
+
+    async function carregarDados() {
+      await carregarMetas();
+
+      const response = await fetch(dadosURL);
+      const data = await response.json();
+      dadosOriginais = data;
+      const tbody = document.querySelector("#ranking tbody");
+      tbody.innerHTML = "";
+
+      const labels = [];
+      const totals = [];
+
+      data.forEach((linha) => {
+        const tr = document.createElement("tr");
+        if (linha["Classificação"] === "1") tr.classList.add("gold");
+        tr.innerHTML = `
+          <td>${linha["Classificação"]}</td>
+          <td class="nome" onclick="mostrarAnalise('${linha["Consultores"]}')">${linha["Consultores"]}</td>
+          <td>${linha["Matriculas Presencial"]}</td>
+          <td>${linha["Matriculas Ead"]}</td>
+          <td>${linha["Matriculas Semi-Presencial"]}</td>
+          <td>${linha["Total de Matriculas"]}</td>
+          <td>${linha["TOTAL GERAL"]}</td>
+        `;
+        tbody.appendChild(tr);
+
+        labels.push(linha["Consultores"]);
+        totals.push(parseInt(linha["TOTAL GERAL"]) || 0);
+      });
+
+      atualizarGrafico(labels, totals);
+    }
+
+    function atualizarGrafico(labels, data) {
+      const ctx = document.getElementById('graficoMatriculas').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'TOTAL GERAL de Matrículas',
+            data: data,
+            backgroundColor: '#FAA612'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function mostrarAnalise(nome) {
+      const pessoa = dadosOriginais.find(d => d["Consultores"] === nome);
+      if (!pessoa) return;
+
+      document.getElementById("graficoMatriculas").style.display = "none";
+      document.getElementById("analise").style.display = "block";
+      document.getElementById("analiseTitulo").innerText = "Análise de " + nome;
+
+      const presencial = parseInt(pessoa["Matriculas Presencial"]) || 0;
+      const ead = parseInt(pessoa["Matriculas Ead"]) || 0;
+      const semi = parseInt(pessoa["Matriculas Semi-Presencial"]) || 0;
+
+      document.getElementById("presencial").innerText = presencial;
+      document.getElementById("ead").innerText = ead;
+      document.getElementById("semi").innerText = semi;
+      document.getElementById("total").innerText = pessoa["Total de Matriculas"] || 0;
+
+      document.getElementById("presencialPct").innerText = Math.round((presencial / metas.presencial) * 100);
+      document.getElementById("eadPct").innerText = Math.round((ead / metas.ead) * 100);
+      document.getElementById("semiPct").innerText = Math.round((semi / metas.semi) * 100);
+    }
+
+    function voltar() {
+      document.getElementById("graficoMatriculas").style.display = "block";
+      document.getElementById("analise").style.display = "none";
+    }
+
+    function toggleFullscreen() {
+      const doc = document.documentElement;
+      if (!document.fullscreenElement) {
+        doc.requestFullscreen().catch(err => console.log(err));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    carregarDados();
+    setInterval(carregarDados, 60000);
+  </script>
+</body>
+</html>
