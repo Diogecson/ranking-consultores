@@ -1,0 +1,313 @@
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Ranking com Modal Automático</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(270deg, #1b1f3a, #00498E, #1b1f3a);
+      background-size: 600% 600%;
+      animation: gradientBackground 15s ease infinite;
+      color: white;
+    }
+
+    @keyframes gradientBackground {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      background-color: rgba(0,0,0,0.3);
+    }
+
+    table {
+      width: 95%;
+      margin: 20px auto;
+      border-collapse: collapse;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      text-align: center;
+    }
+
+    th {
+      background-color: rgba(0, 73, 142, 0.8);
+      color: white;
+    }
+
+    td.nome {
+      color: #FAA612;
+      cursor: pointer;
+      font-weight: bold;
+      text-decoration: underline;
+    }
+
+    .gold {
+      background-color: rgba(255, 215, 0, 0.3);
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 14px;
+      background-color: #FAA612;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      color: #1b1f3a;
+      font-weight: bold;
+    }
+
+    #parabensModal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      color: #1b1f3a;
+      padding: 30px;
+      border-radius: 12px;
+      text-align: center;
+      z-index: 10000;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    #parabensModal h2 {
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+
+    #parabensModal .emoji {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+  </style>
+
+  <style>
+    #parabensModal {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      color: #1b1f3a;
+      padding: 30px;
+      border-radius: 12px;
+      text-align: center;
+      z-index: 10000;
+      box-shadow: 0 0 20px rgba(0,0,0,0.5);
+    }
+
+    #parabensModal h2 {
+      margin-bottom: 10px;
+      font-size: 24px;
+    }
+
+    #parabensModal .emoji {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h2>Ranking de Consultores</h2>
+    <button onclick="toggleFullscreen()">🔳 Tela Cheia</button>
+  </header>
+
+  <audio id="audioParabens" src="https://www.soundjay.com/human/sounds/applause-8.mp3" preload="auto"></audio>
+
+  <div id="parabensModal">
+    <div class="emoji">🏆</div>
+    <h2 id="parabensTitulo">Parabéns!</h2>
+    <p id="parabensMensagem"></p>
+  </div>
+
+  <table id="ranking">
+    <thead>
+      <tr>
+        <th>Classificação</th>
+        <th>Consultores</th>
+        <th>Matriculas Presencial</th>
+        <th>Matriculas Ead</th>
+        <th>Matriculas Semi-Presencial</th>
+        <th>Total de Matriculas</th>
+        <th>TOTAL GERAL</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  
+<div id="parabensModal">
+  <div class="emoji">🏆</div>
+  <h2 id="parabensTitulo">Parabéns!</h2>
+  <p id="parabensMensagem"></p>
+</div>
+<canvas id="graficoMatriculas" height="160"></canvas>
+
+
+  <script>
+    const dadosURL = "https://script.google.com/macros/s/AKfycbyYio8tPKR834-fVVdvQjNhmdLhTmZokooK_cRj-j2LW-D7DFXsgTMlRRTYQ8sZkiX8/exec";
+    const metasURL = "https://opensheet.elk.sh/12fP3mNTB1WwRE4Y41Xjpx9TzdfhXaVrZ5B-XsO9jgEc/metas";
+
+    let chart, metas = {}, mostrados = new Set();
+
+    async function carregarMetas() {
+      const res = await fetch(metasURL);
+      const data = await res.json();
+      metas = {
+        presencial: parseInt(data.find(m => m.modalidade === "Matriculas Presencial")?.valor) || 1,
+        ead: parseInt(data.find(m => m.modalidade === "Matriculas Ead")?.valor) || 1,
+        semi: parseInt(data.find(m => m.modalidade === "Matriculas Semi")?.valor) || 1
+      };
+    }
+
+    async function carregarDados() {
+      await carregarMetas();
+      const response = await fetch(dadosURL);
+      const data = await response.json();
+      const tbody = document.querySelector("#ranking tbody");
+      tbody.innerHTML = "";
+
+      const labels = [];
+      const totals = [];
+
+      data.forEach(linha => {
+        const nome = linha["Consultores"];
+        const presencial = parseInt(linha["Matriculas Presencial"]) || 0;
+        const ead = parseInt(linha["Matriculas Ead"]) || 0;
+        const semi = parseInt(linha["Matriculas Semi-Presencial"]) || 0;
+
+        if (!mostrados.has(`${nome}-P`) && presencial >= metas.presencial) {
+          mostrarParabens(nome, "Presencial");
+          mostrados.add(`${nome}-P`);
+        }
+        if (!mostrados.has(`${nome}-E`) && ead >= metas.ead) {
+          mostrarParabens(nome, "EAD");
+          mostrados.add(`${nome}-E`);
+        }
+        if (!mostrados.has(`${nome}-S`) && semi >= metas.semi) {
+          mostrarParabens(nome, "Semi-Presencial");
+          mostrados.add(`${nome}-S`);
+        }
+
+        const tr = document.createElement("tr");
+        if (linha["Classificação"] === "1") tr.classList.add("gold");
+        tr.innerHTML = `
+          <td>${linha["Classificação"]}</td>
+          <td>${nome}</td>
+          <td>${presencial}</td>
+          <td>${ead}</td>
+          <td>${semi}</td>
+          <td>${linha["Total de Matriculas"]}</td>
+          <td>${linha["TOTAL GERAL"]}</td>
+        `;
+        
+        const nome = linha["Consultores"];
+        const presencial = parseInt(linha["Matriculas Presencial"]) || 0;
+        const ead = parseInt(linha["Matriculas Ead"]) || 0;
+        const semi = parseInt(linha["Matriculas Semi-Presencial"]) || 0;
+
+        if (!mostrados.has(`${nome}-P`) && presencial >= metas.presencial) {
+          mostrarParabens(nome, "Presencial");
+          mostrados.add(`${nome}-P`);
+        }
+        if (!mostrados.has(`${nome}-E`) && ead >= metas.ead) {
+          mostrarParabens(nome, "EAD");
+          mostrados.add(`${nome}-E`);
+        }
+        if (!mostrados.has(`${nome}-S`) && semi >= metas.semi) {
+          mostrarParabens(nome, "Semi-Presencial");
+          mostrados.add(`${nome}-S`);
+        }
+
+        tbody.appendChild(tr);
+
+
+        labels.push(nome);
+        totals.push(parseInt(linha["TOTAL GERAL"]) || 0);
+      });
+
+      atualizarGrafico(labels, totals);
+    }
+
+    function atualizarGrafico(labels, data) {
+      const ctx = document.getElementById('graficoMatriculas').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'TOTAL GERAL de Matrículas',
+            data: data,
+            backgroundColor: '#FAA612'
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } }
+        }
+      });
+    }
+
+    function mostrarParabens(nome, modalidade) {
+      document.getElementById("audioParabens").play();
+      document.getElementById("parabensTitulo").innerText = `Parabéns, ${nome}!`;
+      document.getElementById("parabensMensagem").innerText = `Você bateu a meta da modalidade ${modalidade}!`;
+      document.getElementById("parabensModal").style.display = "block";
+
+      confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+
+      setTimeout(() => {
+        document.getElementById("parabensModal").style.display = "none";
+      }, 5000);
+    }
+
+    
+function mostrarParabens(nome, modalidade) {
+  document.getElementById("audioParabens").play();
+  document.getElementById("parabensTitulo").innerText = `Parabéns, ${nome}!`;
+  document.getElementById("parabensMensagem").innerText = `Você bateu a meta da modalidade ${modalidade}!`;
+  document.getElementById("parabensModal").style.display = "block";
+
+  confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+
+  setTimeout(() => {
+    document.getElementById("parabensModal").style.display = "none";
+  }, 35000);
+}
+
+function toggleFullscreen() {
+
+      const doc = document.documentElement;
+      if (!document.fullscreenElement) {
+        doc.requestFullscreen().catch(err => console.log(err));
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    carregarDados();
+    setInterval(carregarDados, 60000);
+  </script>
+</body>
+</html>
